@@ -141,7 +141,7 @@ class Profile(models.Model):
         age = today.year - self.birth_date.year - (
             (today.month, today.day) < (self.birth_date.month, self.birth_date.day)
         )
-        cache.set(cache_key, age, 86400)  # Cache for 1 day
+        cache.set(cache_key, age, 86400) 
         return age
 
     @property
