@@ -11,15 +11,15 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.authtoken.models import Token
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.authtoken.models import Token 
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import login, logout
 
 from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer,
     UserSerializer, ProfileSerializer, ProfileUpdateSerializer,
-    ProfilePhotoUploadSerializer
+    ProfilePhotoUploadSerializer, InterestSerializer
 )
 from apps.common.pagination import StandardResultsSetPagination
 
@@ -39,7 +39,7 @@ class AuthViewSet(viewsets.GenericViewSet):
     """
 
     permission_classes = [AllowAny]
-    serializer_class = UserLoginSerializer  # Default fallback
+    serializer_class = UserLoginSerializer 
 
     def get_serializer_class(self):
         """
@@ -128,7 +128,7 @@ class ProfileViewSet(viewsets.GenericViewSet):
     - View, update, upload/delete photo, add/remove interests.
     """
     permission_classes = [IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]  # For photo uploads
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self):
         return self.request.user.profile
@@ -144,7 +144,7 @@ class ProfileViewSet(viewsets.GenericViewSet):
             status=status.HTTP_200_OK
         )
 
-    @action(detail=False, methods=['put', 'patch'])
+    @action(detail=False, methods=['put', 'patch'], url_path='update')
     def update_profile(self, request):
         """
         Update user's profile details.
@@ -182,8 +182,7 @@ class ProfileViewSet(viewsets.GenericViewSet):
             "photo": {
                 "id": photo.id,
                 "url": request.build_absolute_uri(photo.image.url),
-                "is_primary": photo.is_primary,
-                "order": photo.order
+                "is_primary": photo.is_primary
             }
         }, status=status.HTTP_201_CREATED)
 
@@ -251,3 +250,15 @@ class ProfileViewSet(viewsets.GenericViewSet):
             profile.calculate_completion_percentage()
             return Response({"message": "Interest removed successfully"}, status=status.HTTP_200_OK)
         return Response({"error": "Interest not found in profile"}, status=status.HTTP_404_NOT_FOUND)
+    
+# ============================================================================
+# INTEREST VIEWSET (Read-only)
+# ============================================================================
+class InterestViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet for listing available interests.
+    """
+    queryset = Interest.objects.all().order_by('name')
+    serializer_class = InterestSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None 

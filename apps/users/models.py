@@ -208,7 +208,7 @@ class ProfilePhoto(models.Model):
 
 
 # ==============================
-# 🎯 Interests
+# Interests
 # ==============================
 class Interest(models.Model):
     """

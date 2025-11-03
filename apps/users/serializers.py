@@ -125,7 +125,7 @@ class ProfilePhotoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProfilePhoto
-        fields = ['id', 'url', 'is_primary', 'order', 'uploaded_at']
+        fields = ['id', 'url', 'is_primary', 'uploaded_at']
         read_only_fields = ['id', 'uploaded_at']
 
     def get_url(self, obj):
@@ -144,7 +144,7 @@ class InterestSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Interest
-        fields = ['id', 'name', 'category', 'icon']
+        fields = ['id', 'name']
         read_only_fields = ['id']
 
 
@@ -161,8 +161,8 @@ class ProfileInterestSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProfileInterest
-        fields = ['interest', 'interest_id', 'passion_level', 'added_at']
-        read_only_fields = ['added_at']
+        fields = ['interest', 'interest_id', 'passion_level']
+        read_only_fields = []
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -172,7 +172,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     """
     age = serializers.IntegerField(read_only=True)
     photos = ProfilePhotoSerializer(many=True, read_only=True)
-    interests = InterestSerializer(many=True, read_only=True)
+    interests = ProfileInterestSerializer(many=True, read_only=True)
     is_complete = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -306,7 +306,7 @@ class ProfilePhotoUploadSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = ProfilePhoto
-        fields = ['image', 'is_primary', 'order']
+        fields = ['image', 'is_primary']
 
     def validate(self, attrs):
         """
