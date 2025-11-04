@@ -131,7 +131,11 @@ class ProfileViewSet(viewsets.GenericViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_object(self):
-        return self.request.user.profile
+        """
+        Get or create the profile for the current user.
+        """
+        profile, _ = Profile.objects.get_or_create(user=self.request.user)
+        return profile
 
     @action(detail=False, methods=['get'])
     def me(self, request):

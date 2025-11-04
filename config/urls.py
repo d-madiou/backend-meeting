@@ -13,10 +13,12 @@ urlpatterns = [
 
     # App-specific API routes
     path('api/', include('apps.users.urls')),
+    path('api/', include('apps.matching.urls')),
     
 
     # DRF browsable API authentication
     path('api-auth/', include('rest_framework.urls')),
+    
 ]
 
 # Serve media and static files in development
