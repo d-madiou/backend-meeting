@@ -40,6 +40,10 @@ class User(AbstractUser):
     email = models.EmailField(unique=True, max_length=255)
     username = models.CharField(max_length=150, unique=True)
     last_activity = models.DateTimeField(null=True, blank=True)
+    is_verified = models.BooleanField(
+        default=False,
+        help_text=_('Designates whether the user has verified their email address.')
+    )
 
     objects = UserManager()
 

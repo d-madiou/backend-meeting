@@ -257,11 +257,11 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'first_name', 'last_name',
+            'id', 'username', 'email', 'first_name', 'last_name', 'is_verified',
             'is_profile_complete', 'last_activity', 'created_at', 'profile' # 'created_at' is now sourced from profile
         ]
         read_only_fields = [
-            'id', 'is_profile_complete', 'last_activity', 'created_at' # 'created_at' is now sourced from profile
+            'id', 'is_verified', 'is_profile_complete', 'last_activity', 'created_at' # 'created_at' is now sourced from profile
         ]
 
 
