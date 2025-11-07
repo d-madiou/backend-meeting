@@ -105,7 +105,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = StandardResultsSetPagination
-    lookup_field = 'uuid'
+    lookup_field = 'id'
 
     def get_queryset(self):
         """

@@ -275,7 +275,7 @@ class UserBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'uuid', 'username', 'primary_photo', 'age', 'city']
+        fields = ['id', 'username', 'primary_photo', 'age', 'city']
 
     def get_primary_photo(self, obj):
         """
