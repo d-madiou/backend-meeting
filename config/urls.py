@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/', include('apps.users.urls')),
     path('api/', include('apps.matching.urls')),
     
+    path('api/', include('apps.urls')),
 
     # DRF browsable API authentication
     path('api-auth/', include('rest_framework.urls')),

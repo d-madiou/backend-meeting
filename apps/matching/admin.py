@@ -4,8 +4,6 @@ from .models import (
     Block, UserPreference
 )
 
-
-# Register your models here.
 admin.site.register(Match)
 admin.site.register(SwipeAction)
 admin.site.register(ProfileView)

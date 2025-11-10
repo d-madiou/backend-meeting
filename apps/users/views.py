@@ -15,13 +15,14 @@ from rest_framework.authtoken.models import Token
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import login, logout
 
-from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest
+from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest, DeviceToken
 from .serializers import (
     UserRegistrationSerializer, UserLoginSerializer,
     UserSerializer, ProfileSerializer, ProfileUpdateSerializer,
     ProfilePhotoUploadSerializer, InterestSerializer
 )
 from apps.common.pagination import StandardResultsSetPagination
+
 
 
 # ============================================================================
@@ -266,3 +267,47 @@ class InterestViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = InterestSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None 
+
+#======= Fire base notifications push
+class DeviceTokenViewSet(viewsets.ViewSet):
+    """
+    Manage device tokens for push notifications.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['post'])
+    def register(self, request):
+        """
+        Register or update device token.
+        
+        POST /api/users/device-token/
+        Body: {
+            "token": "ExponentPushToken[xxx]",
+            "platform": "ios" or "android",
+            "device_type": "iPhone 13"
+        }
+        """
+        token = request.data.get('token')
+        platform = request.data.get('platform')
+        device_type = request.data.get('device_type', '')
+        
+        if not token or not platform:
+            return Response({
+                'error': 'Token and platform are required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Create or update token
+        device_token, created = DeviceToken.objects.update_or_create(
+            user=request.user,
+            token=token,
+            defaults={
+                'platform': platform,
+                'device_type': device_type,
+                'is_active': True
+            }
+        )
+        
+        return Response({
+            'message': 'Token registered successfully',
+            'created': created
+        }, status=status.HTTP_200_OK)

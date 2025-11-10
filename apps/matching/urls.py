@@ -6,10 +6,11 @@ from .views import FeedViewSet, MatchViewSet
 
 router = DefaultRouter()
 router.register(r'feed', FeedViewSet, basename='feed')
-router.register(r'discovery', FeedViewSet, basename='discovery') # Keep for /swipe
+router.register(r'discovery', FeedViewSet, basename='discovery')
 router.register(r'matches', MatchViewSet, basename='matches')
 
 
 urlpatterns = [
     path('', include(router.urls)),
 ]
+

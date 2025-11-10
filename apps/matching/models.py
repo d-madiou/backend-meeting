@@ -16,23 +16,22 @@ from django.core.cache import cache
 import uuid
 
 
-# ============================================================================
+# =======================================================
 # MATCH MODEL
-# ============================================================================
+# =======================================================
 
 class Match(models.Model):
     """
     Represents a match between two users.
-    
     Design Pattern: Bidirectional match (if A matches B, B matches A).
     We store both directions for query efficiency.
     """
     
     MATCH_STATUS = [
-        ('pending', 'Pending'),      # One user liked, waiting for response
-        ('matched', 'Matched'),      # Both users liked each other
-        ('passed', 'Passed'),        # User explicitly passed
-        ('expired', 'Expired'),      # Match opportunity expired
+        ('pending', 'Pending'),
+        ('matched', 'Matched'),    
+        ('passed', 'Passed'),
+        ('expired', 'Expired'),     
     ]
     
     uuid = models.UUIDField(
@@ -40,6 +39,16 @@ class Match(models.Model):
         editable=False,
         unique=True,
         db_index=True
+    )
+    status = models.CharField(
+    max_length=20,
+    choices=[
+        ('pending', 'Pending'),
+        ('matched', 'Matched'),
+        ('rejected', 'Rejected'),
+    ],
+    default='pending',
+    help_text='Status of the match'
     )
     
     # User who initiated the like
@@ -278,30 +287,6 @@ class SwipeAction(models.Model):
     def __str__(self):
         return f"{self.user.username} {self.action} {self.target_user.username}"
     
-    def save(self, *args, **kwargs):
-        """
-        Let's create match when the action is like 
-        """
-        is_new = self.pk is None
-        super().save(*args, **kwargs)
-
-        if is_new and self.action == 'like':
-            match, created = Match.create_match(
-                user=self.user,
-                matched_user=self.target_user,
-                match_score=self.match_score_at_swipe
-            )
-
-            #Let's check if the target user is already like this user
-            mutual_like_exists = SwipeAction.objects.filter(
-                user=self.target_user,
-                target_user=self.user,
-                action='like'
-            ).exists()
-
-            if mutual_like_exists:
-                match.mark_as_mutual()
-
 # ============================================================================
 # PROFILE VIEW MODEL
 # ============================================================================

@@ -30,7 +30,7 @@ class UserManager(BaseUserManager):
 
 
 # ==============================
-# 👤 Custom User Model
+# Custom User Model
 # ==============================
 class User(AbstractUser):
     """
@@ -249,3 +249,44 @@ class ProfileInterest(models.Model):
 
     def __str__(self):
         return f"{self.profile.user.username} → {self.interest.name} ({self.passion_level})"
+
+#========== firbase real time notifications
+class DeviceToken(models.Model):
+    """
+    Store device tokens for push notifications.
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='device_tokens'
+    )
+    token = models.CharField(
+        max_length=255,
+        unique=True,
+        help_text='Expo push token'
+    )
+    platform = models.CharField(
+        max_length=10,
+        choices=[('ios', 'iOS'), ('android', 'Android')],
+        help_text='Device platform'
+    )
+    device_type = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text='Device model/name'
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text='Is this token still valid'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'device_tokens'
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.platform}"

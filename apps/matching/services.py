@@ -338,8 +338,7 @@ class MatchingService:
         
         # Build base query
         potential_matches = User.objects.filter(
-            is_active=True,
-            is_profile_complete=True
+            is_active=True
         ).exclude(
             id=user.id  # Don't show self
         ).select_related(
@@ -435,32 +434,40 @@ class MatchingService:
         """
         # Calculate match score at time of swipe
         match_score = MatchingService.calculate_match_score(user, target_user)
-        
-        # Create swipe action (this will handle match creation in save())
-        swipe = SwipeAction.objects.create(
+
+        # Use update_or_create to handle existing swipes
+        swipe, created = SwipeAction.objects.update_or_create(
             user=user,
             target_user=target_user,
-            action=action,
-            match_score_at_swipe=match_score
+            defaults={
+                'action': action,
+                'match_score_at_swipe': match_score
+            }
         )
-        
+
         # Invalidate cache
         cache_key = f'potential_matches_{user.id}_limit_20'
         cache.delete(cache_key)
-        
-        # Check if it's a mutual match
+
+        mutual_match = None
         if action == 'like':
-            try:
-                match = Match.objects.get(user=user, matched_user=target_user)
-                if match.is_mutual:
-                    logger.info(
-                        f"Mutual match created: {user.username} <-> {target_user.username}"
-                    )
-                    return swipe, match
-            except Match.DoesNotExist:
-                pass
-        
-        return swipe, None
+            # Create a match record for the person who just liked
+            match, _ = Match.create_match(
+                user=user,
+                matched_user=target_user,
+                match_score=match_score
+            )
+
+            # Check if the other person has already liked back
+            if SwipeAction.objects.filter(user=target_user, target_user=user, action='like').exists():
+                # It's a mutual match!
+                mutual_match = match
+                mutual_match.mark_as_mutual()
+                logger.info(
+                    f"Mutual match created: {user.username} <-> {target_user.username}"
+                )
+
+        return swipe, mutual_match
     
     @staticmethod
     def get_user_matches(user, only_mutual=True, limit=50):
