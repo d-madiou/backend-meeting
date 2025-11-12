@@ -1,11 +1,9 @@
-# apps/users/utils/push_notifications.py (Updated)
+
 
 import requests
 import json
 from typing import List, Dict, Any
 from apps.users.models import DeviceToken
-# Import User and Profile models here or pass the photo URL directly.
-# Assuming you already have access to the models for illustration.
 from apps.users.models import User, Profile 
 
 EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send'
@@ -33,12 +31,9 @@ def send_push_notification(
     """
     data = data or {}
     
-    # 🚀 FIX: Determine the final image URL. 
-    # Prioritize 'imageUrl' from the input data, otherwise use the APP_ICON_URL as fallback.
     final_image_url = data.get('imageUrl', APP_ICON_URL)
     
     try:
-        # Get user's active device tokens
         tokens = DeviceToken.objects.filter(
             user__id=user_id,
             is_active=True
@@ -79,8 +74,17 @@ def send_push_notification(
         )
         
         if response.status_code == 200:
-            result = response.json()
-            print(f'Push notification sent: {result}')
+            expo_response_data = response.json()
+            print(f'Push notification sent: {expo_response_data}')
+            
+            # Process Expo's response to deactivate invalid tokens
+            for item in expo_response_data.get('data', []):
+                if item.get('status') == 'error' and item.get('details', {}).get('error') == 'DeviceNotRegistered':
+                    invalid_token = item.get('details', {}).get('expoPushToken')
+                    if invalid_token:
+                        DeviceToken.objects.filter(token=invalid_token).update(is_active=False)
+                        print(f'Deactivated invalid Expo push token: {invalid_token}')
+
             return True
         else:
             print(f'Failed to send notification: {response.text}')

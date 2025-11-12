@@ -88,7 +88,8 @@ class FeedViewSet(viewsets.ViewSet):
             # Notify target user someone liked them
             send_like_notification(
                 liker_username=request.user.username,
-                liked_user_id=str(target_user.id)
+                liked_user_id=str(target_user.id),
+                liker_user_id=str(request.user.id)
             )
 
             # If it's a mutual match
@@ -99,12 +100,14 @@ class FeedViewSet(viewsets.ViewSet):
                 send_match_notification(
                     matched_username=target_user.username,
                     user_id=str(request.user.id),
-                    match_id=str(mutual_match.id)
+                    match_id=str(mutual_match.id),
+                    matched_user_id=str(target_user.id)
                 )
                 send_match_notification(
                     matched_username=request.user.username,
                     user_id=str(target_user.id),
-                    match_id=str(mutual_match.id)
+                    match_id=str(mutual_match.id),
+                    matched_user_id=str(request.user.id)
                 )
 
         # --- Prepare response ---

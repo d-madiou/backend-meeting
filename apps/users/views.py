@@ -14,6 +14,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authtoken.models import Token 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.contrib.auth import login, logout
+from django.shortcuts import get_object_or_404
 
 from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest, DeviceToken
 from .serializers import (
@@ -115,10 +116,50 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         return (
             User.objects.filter(is_active=True)
             .select_related('profile')
-            .prefetch_related('profile__photos', 'profile__interests')
-            .distinct()
+            .prefetch_related('profile__photos', 'profile__interests__interest')
+            .distinct() # Ensure distinct users are returned
         )
 
+    @action(detail=True, methods=['get'], url_path='detail')
+    def public_profile(self, request, id=None):
+        """
+        Get another user's public profile.
+        
+        GET /api/users/{user_uuid}/detail/
+        """
+        try:
+            user = self.get_object()
+            profile = user.profile
+            
+            # Get primary photo
+            primary_photo = profile.photos.filter(is_primary=True).first()
+            if not primary_photo:
+                primary_photo = profile.photos.first()
+            
+            photo_url = None
+            if primary_photo:
+                photo_url = request.build_absolute_uri(primary_photo.image.url)
+            
+            # Get interests
+            interests = [pi.interest.name for pi in profile.interests.all()[:10]]
+            
+            return Response({
+                'id': str(user.id),
+                'username': user.username,
+                'age': profile.age,
+                'city': profile.city,
+                'country': profile.country,
+                'bio': profile.bio,
+                'gender': profile.get_gender_display(),
+                'relationship_goal': profile.get_relationship_goal_display(),
+                'photo_url': photo_url,
+                'interests': interests,
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'error': 'User not found'
+            }, status=status.HTTP_404_NOT_FOUND)
 
 # ============================================================================
 # PROFILE VIEWSET
