@@ -143,3 +143,11 @@ STATIC_URL = "/static/"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 STATIC_ROOT = BASE_DIR / "static"
+
+# ================================
+# CUSTOM APP SETTINGS
+# ================================
+
+# Messaging settings
+FREE_MESSAGES_LIMIT = 3  # Number of free messages per conversation per day
+MESSAGE_COIN_COST = 1    # Cost in coins for a message after the free limit

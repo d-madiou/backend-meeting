@@ -14,6 +14,9 @@ urlpatterns = [
     # App-specific API routes
     path('api/', include('apps.users.urls')),
     path('api/', include('apps.matching.urls')),
+
+    # Messaging API routes
+    path('api/', include('apps.messaging.urls')),
     
     path('api/', include('apps.urls')),
 
