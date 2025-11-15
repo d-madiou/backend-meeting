@@ -117,7 +117,7 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             User.objects.filter(is_active=True)
             .select_related('profile')
             .prefetch_related('profile__photos', 'profile__interests__interest')
-            .distinct() # Ensure distinct users are returned
+            .distinct()
         )
 
     @action(detail=True, methods=['get'], url_path='detail')

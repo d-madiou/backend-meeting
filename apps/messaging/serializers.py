@@ -59,8 +59,10 @@ class MessageCreateSerializer(serializers.Serializer):
 class ConversationSerializer(serializers.ModelSerializer):
     """
     Serializer for Conversation model.
+    Includes the other participant and latest message.
     """
     
+    # Nested serializer for the other user
     other_user = serializers.SerializerMethodField()
     latest_message = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
@@ -68,8 +70,12 @@ class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
         fields = [
-            'uuid', 'other_user', 'latest_message',
-            'unread_count', 'created_at', 'last_message_at'
+            'uuid',  # IMPORTANT: Make sure this is here
+            'other_user',
+            'latest_message',
+            'unread_count',
+            'created_at',
+            'last_message_at',
         ]
         read_only_fields = ['uuid', 'created_at', 'last_message_at']
     
@@ -80,7 +86,19 @@ class ConversationSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and request.user:
             other_user = obj.get_other_participant(request.user)
-            return UserBriefSerializer(other_user, context=self.context).data
+            
+            # Get primary photo
+            primary_photo = None
+            if hasattr(other_user, 'profile') and other_user.profile:
+                photo = other_user.profile.photos.filter(is_primary=True).first()
+                if photo:
+                    primary_photo = request.build_absolute_uri(photo.image.url)
+            
+            return {
+                'uuid': str(getattr(other_user, 'uuid', other_user.id)),  # Use uuid if available, else fallback to id
+                'username': other_user.username,
+                'photo_url': primary_photo,
+            }
         return None
     
     def get_latest_message(self, obj):
@@ -90,21 +108,16 @@ class ConversationSerializer(serializers.ModelSerializer):
         # Use prefetched data if available
         if hasattr(obj, 'latest_message') and obj.latest_message:
             message = obj.latest_message[0]
+        else:
+            # Fallback to query
+            message = obj.messages.order_by('-created_at').first()
+        
+        if message:
             return {
                 'content': message.content,
-                'created_at': message.created_at,
+                'created_at': message.created_at.isoformat(),
                 'is_read': message.is_read,
-                'sender_username': message.sender.username
-            }
-        
-        # Fallback to query
-        latest = obj.messages.order_by('-created_at').first()
-        if latest:
-            return {
-                'content': latest.content,
-                'created_at': latest.created_at,
-                'is_read': latest.is_read,
-                'sender_username': latest.sender.username
+                'sender_username': message.sender.username,
             }
         return None
     

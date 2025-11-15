@@ -7,6 +7,7 @@ apps/messaging/views.py
 """
 
 from django.conf import settings
+from django.db.models import Q
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -17,7 +18,7 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 
-from apps.common import models
+from apps.users.models import Profile
 
 
 from .models import DailyMessageQuota, Message, Conversation, CoinWallet
@@ -35,12 +36,6 @@ User = get_user_model()
 class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet for managing conversations.
-    
-    Demonstrates:
-    - Read-only viewset (list and retrieve only)
-    - Custom actions with @action decorator
-    - Service layer integration
-    - Caching with method_decorator
     """
     
     serializer_class = ConversationSerializer
@@ -51,12 +46,34 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """
         Get conversations for current user.
-        Uses service layer for optimized query.
+        
+        For list view, use the optimized service method.
+        For detail view, use a simpler queryset to allow get_object() to work correctly.
         """
-        return MessageService.get_user_conversations(
-            user=self.request.user,
-            limit=100
-        )
+        if self.action == 'list':
+            return MessageService.get_user_conversations(
+                user=self.request.user,
+                limit=100
+            )
+        return Conversation.objects.filter(Q(participant_1=self.request.user) | Q(participant_2=self.request.user))
+    
+    # ADD THIS METHOD - Override list to ensure proper serialization
+    def list(self, request, *args, **kwargs):
+        """
+        List all conversations for current user.
+        
+        GET /api/conversations/
+        """
+        queryset = self.get_queryset()
+        
+        # Paginate
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
     
     @action(detail=True, methods=['get'])
     def messages(self, request, uuid=None):
@@ -183,7 +200,7 @@ class MessageViewSet(viewsets.ModelViewSet):
         # Get receiver
         receiver_uuid = serializer.validated_data['receiver_uuid']
         try:
-            receiver = User.objects.get(uuid=receiver_uuid)
+            receiver = User.objects.get(id=receiver_uuid)
         except (User.DoesNotExist, ValidationError):
             return Response({
                 'error': 'Receiver not found'
@@ -237,7 +254,7 @@ class MessageViewSet(viewsets.ModelViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
-            receiver = User.objects.get(uuid=receiver_uuid)
+            receiver = User.objects.get(id=receiver_uuid)
         except (User.DoesNotExist, ValidationError):
             return Response({
                 'error': 'Receiver not found'
