@@ -154,6 +154,7 @@ class FeedViewSet(viewsets.ViewSet):
         data['match_score'] = match_score
         
         return Response(data, status=status.HTTP_200_OK)
+    
 
 
 # ============================================================================
@@ -394,3 +395,52 @@ class MatchViewSet(viewsets.ViewSet):
             ).count()
 
         return Response({'total': total, 'mutual': mutual, 'pending': pending})
+    
+    @action(detail=False, methods=['post'], url_path='block')
+    def block_user(self, request):
+        """
+        Block a user.
+        
+        POST /api/matching/block/
+        Body: {
+            "blocked_user_id": "user_uuid",
+            "reason": "spam" (optional)
+        }
+        """
+        blocked_user_id = request.data.get('blocked_user_id')
+        reason = request.data.get('reason', '')
+        
+        if not blocked_user_id:
+            return Response({
+                'error': 'blocked_user_id is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            from apps.users.models import User
+            from apps.matching.models import Block
+            
+            blocked_user = User.objects.get(id=blocked_user_id)
+            
+            # Create block
+            block, created = Block.objects.get_or_create(
+                blocker=request.user,
+                blocked_user=blocked_user,
+                defaults={'reason': reason}
+            )
+            
+            # Delete any existing matches
+            from apps.matching.models import Match
+            Match.objects.filter(
+                Q(user=request.user, matched_user=blocked_user) |
+                Q(user=blocked_user, matched_user=request.user)
+            ).delete()
+            
+            return Response({
+                'message': 'User blocked successfully',
+                'created': created
+            }, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response({
+                'error': 'User not found'
+            }, status=status.HTTP_404_NOT_FOUND)

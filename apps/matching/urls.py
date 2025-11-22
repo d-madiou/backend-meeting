@@ -14,3 +14,6 @@ urlpatterns = [
     path('', include(router.urls)),
 ]
 
+urlpatterns += [
+    path('matching/block/', MatchViewSet.as_view({'post': 'block_user'}), name='block-user'),
+]

@@ -46,7 +46,7 @@ class ConversationViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         """
         Get conversations for current user.
-        
+          
         For list view, use the optimized service method.
         For detail view, use a simpler queryset to allow get_object() to work correctly.
         """
@@ -240,11 +240,10 @@ class MessageViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'])
     def check_cost(self, request):
         """
-        Check the coin cost for sending a message to a user.
+        Check the coin cost for sending a message.
+        Returns GLOBAL daily stats (not per conversation).
         
         GET /api/messages/check_cost/?receiver_uuid=xxx
-        
-        Useful for frontend to show cost before sending.
         """
         receiver_uuid = request.query_params.get('receiver_uuid')
         
@@ -260,25 +259,27 @@ class MessageViewSet(viewsets.ModelViewSet):
                 'error': 'Receiver not found'
             }, status=status.HTTP_404_NOT_FOUND)
         
-        # Get or create conversation
+        # Get or create conversation (for validation, not quota)
         conversation, _ = Conversation.get_or_create_conversation(
             request.user, receiver
         )
         
-        # Calculate cost
+        # Calculate cost based on GLOBAL daily quota
         cost = MessageService.calculate_message_cost(
             request.user, conversation
         )
         
-        # Get remaining free messages
-        quota = DailyMessageQuota.get_quota(conversation, request.user)
+        # Get GLOBAL quota for today
+        quota = DailyMessageQuota.get_quota(request.user)
         free_remaining = max(0, settings.FREE_MESSAGES_LIMIT - quota.free_messages_used)
         
         return Response({
             'coin_cost': cost,
             'is_free': cost == 0,
             'free_messages_remaining': free_remaining,
-            'free_messages_limit': settings.FREE_MESSAGES_LIMIT
+            'free_messages_limit': settings.FREE_MESSAGES_LIMIT,
+            'total_messages_sent_today': quota.total_messages_sent,  # NEW
+            'paid_messages_sent_today': quota.paid_messages_sent,     # NEW
         }, status=status.HTTP_200_OK)
 
 

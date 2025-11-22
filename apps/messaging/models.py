@@ -424,22 +424,14 @@ class Message(models.Model):
 
 class DailyMessageQuota(models.Model):
     """
-    Tracks daily message quotas per conversation.
-    Optimizes the check for free messages without scanning all messages.
-    
-    Alternative Design: Could also use caching, but this provides persistent storage.
+    Tracks daily message quotas PER USER (not per conversation).
+    This ensures 3 free messages TOTAL per day, not per conversation.
     """
-    
-    conversation = models.ForeignKey(
-        Conversation,
-        on_delete=models.CASCADE,
-        related_name='daily_quotas'
-    )
     
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name='message_quotas'
+        related_name='daily_quotas'
     )
     
     date = models.DateField(
@@ -447,34 +439,38 @@ class DailyMessageQuota(models.Model):
         db_index=True
     )
     
-    message_count = models.PositiveIntegerField(default=0)
+    # Total messages sent today
+    total_messages_sent = models.PositiveIntegerField(default=0)
+    
+    # Free messages used today (across ALL conversations)
     free_messages_used = models.PositiveIntegerField(default=0)
+    
+    # Paid messages sent today
     paid_messages_sent = models.PositiveIntegerField(default=0)
     
     class Meta:
         db_table = 'daily_message_quotas'
-        unique_together = ['conversation', 'user', 'date']
+        unique_together = ['user', 'date']
         indexes = [
-            models.Index(fields=['conversation', 'user', 'date']),
+            models.Index(fields=['user', 'date']),
         ]
     
     def __str__(self):
-        return f"{self.user.username} - {self.date}: {self.message_count} messages"
+        return f"{self.user.username} - {self.date}: {self.total_messages_sent} messages"
     
     @classmethod
-    def get_quota(cls, conversation, user, date_obj=None):
+    def get_quota(cls, user, date_obj=None):
         """
-        Get or create quota for today.
+        Get or create quota for user for today.
         """
         if date_obj is None:
             date_obj = date.today()
         
         quota, created = cls.objects.get_or_create(
-            conversation=conversation,
             user=user,
             date=date_obj,
             defaults={
-                'message_count': 0,
+                'total_messages_sent': 0,
                 'free_messages_used': 0,
                 'paid_messages_sent': 0
             }
@@ -486,15 +482,15 @@ class DailyMessageQuota(models.Model):
         """
         Increment message count.
         """
-        self.message_count += 1
+        self.total_messages_sent += 1
         if is_paid:
             self.paid_messages_sent += 1
         else:
             self.free_messages_used += 1
-        self.save(update_fields=['message_count', 'free_messages_used', 'paid_messages_sent'])
+        self.save(update_fields=['total_messages_sent', 'free_messages_used', 'paid_messages_sent'])
     
     def has_free_messages_remaining(self):
         """
-        Check if user still has free messages for today.
+        Check if user still has free messages for today (GLOBALLY).
         """
         return self.free_messages_used < settings.FREE_MESSAGES_LIMIT

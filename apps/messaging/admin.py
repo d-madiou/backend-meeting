@@ -8,3 +8,5 @@ admin.site.register(CoinTransaction)
 admin.site.register(Conversation)
 admin.site.register(Message)
 admin.site.register(DailyMessageQuota)
+
+

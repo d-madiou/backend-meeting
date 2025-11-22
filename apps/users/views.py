@@ -160,6 +160,63 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({
                 'error': 'User not found'
             }, status=status.HTTP_404_NOT_FOUND)
+        
+    @action(detail=True, methods=['get'], url_path='profile')
+    def get_user_profile(self, request, id=None):
+            """
+            Get detailed profile of another user.
+            Also check if users are matched.
+            
+            GET /api/users/{user_id}/profile/
+            """
+            try:
+                user = self.get_object()
+                profile = user.profile
+                
+                # Check if users are matched
+                from apps.matching.models import Match
+                is_matched = Match.objects.filter(
+                    user=request.user,
+                    matched_user=user,
+                    is_mutual=True
+                ).exists()
+                
+                # Get primary photo
+                primary_photo = profile.photos.filter(is_primary=True).first()
+                if not primary_photo:
+                    primary_photo = profile.photos.first()
+                
+                photo_url = None
+                if primary_photo:
+                    photo_url = request.build_absolute_uri(primary_photo.image.url)
+                
+                # Get all photos
+                all_photos = []
+                for photo in profile.photos.all()[:6]:
+                    all_photos.append(request.build_absolute_uri(photo.image.url))
+                
+                # Get interests
+                interests = [pi.interest.name for pi in profile.interests.all()]
+                
+                return Response({
+                    'id': str(user.id),
+                    'username': user.username,
+                    'age': profile.age,
+                    'city': profile.city,
+                    'country': profile.country,
+                    'bio': profile.bio,
+                    'gender': profile.get_gender_display() if profile.gender else '',
+                    'relationship_goal': profile.get_relationship_goal_display() if profile.relationship_goal else '',
+                    'photo_url': photo_url,
+                    'all_photos': all_photos,
+                    'interests': interests,
+                    'is_matched': is_matched,  # ← Important!
+                })
+                
+            except User.DoesNotExist:
+                return Response({
+                    'error': 'User not found'
+                }, status=status.HTTP_404_NOT_FOUND)
 
 # ============================================================================
 # PROFILE VIEWSET

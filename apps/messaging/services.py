@@ -74,20 +74,20 @@ class MessageService:
         Calculate coin cost for sending a message.
         
         Business Rule:
-        - First 3 messages per day per conversation: FREE
+        - First 3 messages per DAY (across ALL conversations): FREE
         - Subsequent messages: 1 coin each
         
         Args:
             sender: User sending the message
-            conversation: Conversation object
+            conversation: Conversation object (not used for quota, kept for compatibility)
         
         Returns:
             int: Number of coins required (0 if free)
         """
-        # Get today's quota
-        quota = DailyMessageQuota.get_quota(conversation, sender)
+        # Get today's GLOBAL quota for this user
+        quota = DailyMessageQuota.get_quota(sender)
         
-        # Check if free messages are available
+        # Check if free messages are available (GLOBALLY)
         if quota.has_free_messages_remaining():
             return 0
         
@@ -187,7 +187,7 @@ class MessageService:
             coin_transaction.save(update_fields=['related_message'])
         
         # Step 8: Update daily quota
-        quota = DailyMessageQuota.get_quota(conversation, sender)
+        quota = DailyMessageQuota.get_quota(sender)
         quota.increment(is_paid=(coin_cost > 0))
         
         # Step 9: Invalidate relevant caches

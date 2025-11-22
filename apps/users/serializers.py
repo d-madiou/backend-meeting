@@ -167,23 +167,29 @@ class ProfileInterestSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     """
-    Read serializer for Profile model.
-    Includes all profile information for display.
+    Read serializer for Profile model with calculated stats.
     """
+    
     age = serializers.IntegerField(read_only=True)
     photos = ProfilePhotoSerializer(many=True, read_only=True)
-    interests = ProfileInterestSerializer(many=True, read_only=True)
+    interests = ProfileInterestSerializer(many=True, source='profile_interests', read_only=True)
     is_complete = serializers.BooleanField(read_only=True)
-
+    
+    # Add calculated fields
+    actual_matches = serializers.SerializerMethodField()
+    actual_views = serializers.SerializerMethodField()
+    actual_messages_sent = serializers.SerializerMethodField()
+    
     class Meta:
         model = Profile
         fields = [
             'bio', 'birth_date', 'age', 'gender',
-            'city', 'country',
+            'city', 'country', 
             'relationship_goal', 'looking_for_gender',
             'min_age_preference', 'max_age_preference', 'max_distance_km',
             'profile_completion_percentage', 'is_complete',
             'total_matches', 'total_messages_sent', 'profile_views',
+            'actual_matches', 'actual_views', 'actual_messages_sent',
             'photos', 'interests',
             'created_at', 'updated_at'
         ]
@@ -192,6 +198,34 @@ class ProfileSerializer(serializers.ModelSerializer):
             'total_messages_sent', 'profile_views',
             'created_at', 'updated_at'
         ]
+    
+    def get_actual_matches(self, obj):
+        """
+        Get real count of mutual matches for this user.
+        """
+        from apps.matching.models import Match
+        return Match.objects.filter(
+            user=obj.user,
+            is_mutual=True
+        ).count()
+    
+    def get_actual_views(self, obj):
+        """
+        Get real count of profile views.
+        """
+        from apps.matching.models import ProfileView
+        return ProfileView.objects.filter(
+            viewed_profile=obj.user
+        ).count()
+    
+    def get_actual_messages_sent(self, obj):
+        """
+        Get real count of messages sent by this user.
+        """
+        from apps.messaging.models import Message
+        return Message.objects.filter(
+            sender=obj.user
+        ).count()
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):

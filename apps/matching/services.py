@@ -401,8 +401,9 @@ class MatchingService:
             try:
                 score = MatchingService.calculate_match_score(user, potential_match)
                 
+                min_score = getattr(settings, 'MIN_MATCH_SCORE', 30)
                 # Only include if score meets minimum threshold
-                if score >= settings.MIN_MATCH_SCORE:
+                if score >= min_score:
                     scored_matches.append((potential_match, score))
             except Exception as e:
                 logger.error(f"Error calculating match score: {e}")

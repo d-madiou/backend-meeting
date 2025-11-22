@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = config("SECRET_KEY", default="dev-secret-key")
 DEBUG = config("DEBUG", default=True, cast=bool)
 
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,172.16.117.74").split(",")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -151,3 +151,20 @@ STATIC_ROOT = BASE_DIR / "static"
 # Messaging settings
 FREE_MESSAGES_LIMIT = 3  # Number of free messages per conversation per day
 MESSAGE_COIN_COST = 1    # Cost in coins for a message after the free limit
+
+
+from .base import *
+
+DEBUG = True
+
+# ======================================================================
+# DEVELOPMENT-SPECIFIC SETTINGS
+# ======================================================================
+
+# Override default throttling rates for development to be more lenient.
+# This prevents "429 Too Many Requests" errors during rapid testing and frontend development.
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+    'anon': '1000/minute',
+    'user': '5000/minute',
+    'messaging': '1000/minute',
+}
