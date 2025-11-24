@@ -25,6 +25,11 @@ from .serializers import (
 from apps.common.pagination import StandardResultsSetPagination
 
 
+from django.utils import timezone
+from django.db.models import Exists, OuterRef, Q
+from .models import Story, StoryView
+from .serializers import StorySerializer, StoryCreateSerializer, StoryViewerSerializer
+
 
 # ============================================================================
 # AUTH VIEWSET
@@ -409,3 +414,188 @@ class DeviceTokenViewSet(viewsets.ViewSet):
             'message': 'Token registered successfully',
             'created': created
         }, status=status.HTTP_200_OK)
+    
+
+#===========================================================================
+class StoryViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing stories.
+    
+    Endpoints:
+    - GET /api/stories/ - List all active stories
+    - POST /api/stories/ - Create new story
+    - GET /api/stories/{id}/ - Get specific story
+    - DELETE /api/stories/{id}/ - Delete own story
+    - GET /api/stories/my_stories/ - Get current user's stories
+    - POST /api/stories/{id}/mark_viewed/ - Mark story as viewed
+    - GET /api/stories/{id}/viewers/ - Get list of viewers
+    """
+    
+    permission_classes = [IsAuthenticated]
+    serializer_class = StorySerializer
+    
+    def get_queryset(self):
+        """
+        Get active stories (not expired).
+        Exclude stories from current user unless accessing my_stories.
+        """
+        now = timezone.now()
+        
+        # Get active stories
+        queryset = Story.objects.filter(
+            expires_at__gt=now
+        ).select_related(
+            'user',
+            'user__profile'
+        ).prefetch_related(
+            'user__profile__photos'
+        )
+        
+        return queryset
+    
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return StoryCreateSerializer
+        return StorySerializer
+    
+    def list(self, request):
+        """
+        Get stories from all users grouped by user.
+        Returns users who have active stories.
+        """
+        now = timezone.now()
+        
+        # Get all users who have active stories
+        users_with_stories = User.objects.filter(
+            stories__expires_at__gt=now
+        ).distinct().select_related('profile').prefetch_related('profile__photos')
+        
+        results = []
+        for user in users_with_stories:
+            # Get user's active stories
+            user_stories = Story.objects.filter(
+                user=user,
+                expires_at__gt=now
+            ).order_by('-created_at')
+            
+            # Check if any story is unviewed by current user
+            has_unviewed = user_stories.exclude(
+                viewers__viewer=request.user
+            ).exists()
+            
+            # Get user photo
+            primary_photo = user.profile.photos.filter(is_primary=True).first()
+            user_photo = None
+            if primary_photo:
+                user_photo = request.build_absolute_uri(primary_photo.image.url)
+            
+            # Serialize stories
+            stories_data = StorySerializer(
+                user_stories,
+                many=True,
+                context={'request': request}
+            ).data
+            
+            results.append({
+                'user_id': str(user.id),
+                'username': user.username,
+                'user_photo': user_photo,
+                'has_unviewed': has_unviewed,
+                'story_count': user_stories.count(),
+                'stories': stories_data
+            })
+        
+        # Sort: unviewed first, then by most recent story
+        results.sort(key=lambda x: (not x['has_unviewed'], -len(x['stories'])))
+        
+        return Response({
+            'count': len(results),
+            'results': results
+        })
+    
+    def create(self, request):
+        """Create a new story."""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Create story for current user
+        story = serializer.save(user=request.user)
+        
+        # Return full story data
+        response_serializer = StorySerializer(story, context={'request': request})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+    
+    def destroy(self, request, pk=None):
+        """Delete own story."""
+        story = self.get_object()
+        
+        # Check if story belongs to current user
+        if story.user != request.user:
+            return Response(
+                {'error': 'You can only delete your own stories'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        story.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+    @action(detail=False, methods=['get'])
+    def my_stories(self, request):
+        """Get current user's active stories."""
+        now = timezone.now()
+        
+        stories = Story.objects.filter(
+            user=request.user,
+            expires_at__gt=now
+        ).order_by('-created_at')
+        
+        serializer = self.get_serializer(stories, many=True)
+        
+        return Response({
+            'count': stories.count(),
+            'results': serializer.data
+        })
+    
+    @action(detail=True, methods=['post'])
+    def mark_viewed(self, request, pk=None):
+        """Mark story as viewed by current user."""
+        story = self.get_object()
+        
+        # Don't count own views
+        if story.user == request.user:
+            return Response({'message': 'Cannot view own story'})
+        
+        # Create or get view record
+        view, created = StoryView.objects.get_or_create(
+            story=story,
+            viewer=request.user
+        )
+        
+        if created:
+            # Increment view count
+            story.increment_views()
+        
+        return Response({
+            'message': 'Story marked as viewed',
+            'view_count': story.view_count
+        })
+    
+    @action(detail=True, methods=['get'])
+    def viewers(self, request, pk=None):
+        """Get list of users who viewed this story."""
+        story = self.get_object()
+        
+        # Only owner can see viewers
+        if story.user != request.user:
+            return Response(
+                {'error': 'You can only view viewers of your own stories'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        viewers = StoryView.objects.filter(story=story).select_related('viewer', 'viewer__profile')
+        serializer = StoryViewerSerializer(viewers, many=True, context={'request': request})
+        
+        return Response({
+            'count': viewers.count(),
+            'results': serializer.data
+        })

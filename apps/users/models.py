@@ -5,6 +5,8 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.cache import cache
 from datetime import date
 import uuid
+from django.utils import timezone
+from datetime import timedelta
 
 
 # ==============================
@@ -290,3 +292,145 @@ class DeviceToken(models.Model):
     
     def __str__(self):
         return f"{self.user.username} - {self.platform}"
+    
+# =================================================================
+class Story(models.Model):
+    """
+    User stories similar to WhatsApp/Instagram stories.
+    Stories expire after 24 hours.
+    """
+    
+    STORY_TYPES = [
+        ('image', 'Image'),
+        ('video', 'Video'),
+        ('text', 'Text'),
+    ]
+    
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='stories'
+    )
+    
+    story_type = models.CharField(
+        max_length=10,
+        choices=STORY_TYPES,
+        default='image'
+    )
+    
+    # Media fields
+    image = models.ImageField(
+        upload_to='stories/%Y/%m/%d/',
+        null=True,
+        blank=True,
+        help_text=_('Story image')
+    )
+    
+    video = models.FileField(
+        upload_to='stories/%Y/%m/%d/',
+        null=True,
+        blank=True,
+        help_text=_('Story video')
+    )
+    
+    # Text story fields
+    text_content = models.TextField(
+        max_length=500,
+        blank=True,
+        help_text=_('Text content for text-only stories')
+    )
+    
+    background_color = models.CharField(
+        max_length=7,
+        default='#FF006E',
+        help_text=_('Background color for text stories (hex)')
+    )
+    
+    # Caption (optional for all types)
+    caption = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text=_('Optional caption for story')
+    )
+    
+    # Duration in seconds (for video/display time)
+    duration = models.PositiveIntegerField(
+        default=5,
+        help_text=_('Display duration in seconds')
+    )
+    
+    # View count
+    view_count = models.PositiveIntegerField(default=0)
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    
+    class Meta:
+        db_table = 'stories'
+        ordering = ['-created_at']
+        verbose_name_plural = 'Stories'
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['expires_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user.username}'s story - {self.story_type}"
+    
+    def save(self, *args, **kwargs):
+        """Set expiration time to 24 hours from creation."""
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timedelta(hours=24)
+        super().save(*args, **kwargs)
+    
+    @property
+    def is_expired(self):
+        """Check if story has expired."""
+        return timezone.now() > self.expires_at
+    
+    @property
+    def time_remaining(self):
+        """Get remaining time in seconds."""
+        if self.is_expired:
+            return 0
+        delta = self.expires_at - timezone.now()
+        return int(delta.total_seconds())
+    
+    def increment_views(self):
+        """Increment view counter atomically."""
+        from django.db.models import F
+        Story.objects.filter(pk=self.pk).update(view_count=F('view_count') + 1)
+        self.refresh_from_db()
+
+
+class StoryView(models.Model):
+    """
+    Track who has viewed each story.
+    """
+    
+    story = models.ForeignKey(
+        Story,
+        on_delete=models.CASCADE,
+        related_name='viewers'
+    )
+    
+    viewer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='story_views'
+    )
+    
+    viewed_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'story_views'
+        unique_together = ['story', 'viewer']
+        ordering = ['-viewed_at']
+        indexes = [
+            models.Index(fields=['story', '-viewed_at']),
+            models.Index(fields=['viewer', '-viewed_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.viewer.username} viewed {self.story.user.username}'s story"

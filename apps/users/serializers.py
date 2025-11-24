@@ -14,6 +14,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
 from datetime import date
+from .models import Story, StoryView
 
 from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest
 
@@ -393,3 +394,90 @@ class ErrorResponseSerializer(serializers.Serializer):
     """
     error = serializers.CharField()
     details = serializers.DictField(required=False)
+
+class StoryViewerSerializer(serializers.ModelSerializer):
+    """Serializer for story viewers."""
+    viewer_username = serializers.CharField(source='viewer.username', read_only=True)
+    viewer_photo = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = StoryView
+        fields = ['viewer_username', 'viewer_photo', 'viewed_at']
+    
+    def get_viewer_photo(self, obj):
+        request = self.context.get('request')
+        primary_photo = obj.viewer.profile.photos.filter(is_primary=True).first()
+        if primary_photo and request:
+            return request.build_absolute_uri(primary_photo.image.url)
+        return None
+
+
+class StorySerializer(serializers.ModelSerializer):
+    """Serializer for Story model."""
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_photo = serializers.SerializerMethodField()
+    media_url = serializers.SerializerMethodField()
+    is_expired = serializers.BooleanField(read_only=True)
+    time_remaining = serializers.IntegerField(read_only=True)
+    is_viewed = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Story
+        fields = [
+            'id', 'user_username', 'user_photo', 'story_type',
+            'media_url', 'text_content', 'background_color',
+            'caption', 'duration', 'view_count',
+            'is_expired', 'time_remaining', 'is_viewed',
+            'created_at', 'expires_at'
+        ]
+        read_only_fields = ['id', 'view_count', 'created_at', 'expires_at']
+    
+    def get_user_photo(self, obj):
+        request = self.context.get('request')
+        primary_photo = obj.user.profile.photos.filter(is_primary=True).first()
+        if primary_photo and request:
+            return request.build_absolute_uri(primary_photo.image.url)
+        return None
+    
+    def get_media_url(self, obj):
+        request = self.context.get('request')
+        if obj.story_type == 'image' and obj.image:
+            return request.build_absolute_uri(obj.image.url)
+        elif obj.story_type == 'video' and obj.video:
+            return request.build_absolute_uri(obj.video.url)
+        return None
+    
+    def get_is_viewed(self, obj):
+        """Check if current user has viewed this story."""
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return StoryView.objects.filter(
+                story=obj,
+                viewer=request.user
+            ).exists()
+        return False
+
+
+class StoryCreateSerializer(serializers.ModelSerializer):
+    """Serializer for creating stories."""
+    
+    class Meta:
+        model = Story
+        fields = [
+            'story_type', 'image', 'video',
+            'text_content', 'background_color', 'caption', 'duration'
+        ]
+    
+    def validate(self, attrs):
+        story_type = attrs.get('story_type')
+        
+        if story_type == 'image' and not attrs.get('image'):
+            raise serializers.ValidationError("Image is required for image stories")
+        
+        if story_type == 'video' and not attrs.get('video'):
+            raise serializers.ValidationError("Video is required for video stories")
+        
+        if story_type == 'text' and not attrs.get('text_content'):
+            raise serializers.ValidationError("Text content is required for text stories")
+        
+        return attrs

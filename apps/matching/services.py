@@ -340,7 +340,7 @@ class MatchingService:
         potential_matches = User.objects.filter(
             is_active=True
         ).exclude(
-            id=user.id  # Don't show self
+            id=user.id
         ).select_related(
             'profile'
         ).prefetch_related(
