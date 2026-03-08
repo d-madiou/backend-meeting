@@ -163,8 +163,8 @@ class MessageViewSet(viewsets.ModelViewSet):
         Either sent or received.
         """
         return Message.objects.filter(
-            models.Q(sender=self.request.user) | 
-            models.Q(receiver=self.request.user)
+            Q(sender=self.request.user) | 
+            Q(receiver=self.request.user)
         ).select_related(
             'sender__profile',
             'receiver__profile',

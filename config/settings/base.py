@@ -1,13 +1,22 @@
 # config/settings/base.py
 from pathlib import Path
 from decouple import config, Csv
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config("SECRET_KEY", default="dev-secret-key")
-DEBUG = config("DEBUG", default=True, cast=bool)
+DEBUG = str(config("DEBUG", default="True")).strip().lower() in {"1", "true", "yes", "on"}
 
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,172.16.117.74").split(",")
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+CORS_ALLOW_CREDENTIALS = True
+
+
+AUTH_USER_MODEL = "users.User"
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -19,6 +28,9 @@ INSTALLED_APPS = [
     "rest_framework",
     "django_filters",
     'rest_framework.authtoken',
+    'cloudinary_storage',
+    'cloudinary',
+    'corsheaders',
     # local apps
     "apps.users",
     "apps.matching",
@@ -28,7 +40,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -58,20 +72,31 @@ ASGI_APPLICATION = "config.asgi.application"
 # ================================
 # DATABASE
 # ================================
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': config('DB_NAME', default='dating_db'),
+#         'USER': config('DB_USER', default='root'),
+#         'PASSWORD': config('DB_PASSWORD', default=''),
+#         'HOST': config('DB_HOST', default='localhost'),
+#         'PORT': config('DB_PORT', default='3306'),
+#         'OPTIONS': {
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+#             'charset': 'utf8mb4',
+#         },
+#         'CONN_MAX_AGE': 600,
+#     }
+# }
+
+# ================================
+# DATABASE
+# ================================
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': config('DB_NAME', default='dating_db'),
-        'USER': config('DB_USER', default='root'),
-        'PASSWORD': config('DB_PASSWORD', default=''),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='3306'),
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-            'charset': 'utf8mb4',
-        },
-        'CONN_MAX_AGE': 600,
-    }
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL'),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 }
 
 # ================================
@@ -137,12 +162,23 @@ CORS_ALLOWED_ORIGINS = config(
 CORS_ALLOW_CREDENTIALS = True
 
 # ================================
-# STATIC & MEDIA
+# STATIC & MEDIA (Cloudinary & Whitenoise)
 # ================================
 STATIC_URL = "/static/"
-MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
-STATIC_ROOT = BASE_DIR / "static"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+# Tell Whitenoise to serve static files
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Cloudinary config for Media (Profile Photos, etc.)
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': config('CLOUDINARY_CLOUD_NAME', default=''),
+    'API_KEY': config('CLOUDINARY_API_KEY', default=''),
+    'API_SECRET': config('CLOUDINARY_API_SECRET', default=''),
+}
+
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+MEDIA_URL = '/media/'
 
 # ================================
 # CUSTOM APP SETTINGS
@@ -151,20 +187,3 @@ STATIC_ROOT = BASE_DIR / "static"
 # Messaging settings
 FREE_MESSAGES_LIMIT = 3  # Number of free messages per conversation per day
 MESSAGE_COIN_COST = 1    # Cost in coins for a message after the free limit
-
-
-from .base import *
-
-DEBUG = True
-
-# ======================================================================
-# DEVELOPMENT-SPECIFIC SETTINGS
-# ======================================================================
-
-# Override default throttling rates for development to be more lenient.
-# This prevents "429 Too Many Requests" errors during rapid testing and frontend development.
-REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
-    'anon': '1000/minute',
-    'user': '5000/minute',
-    'messaging': '1000/minute',
-}

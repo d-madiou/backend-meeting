@@ -30,6 +30,7 @@ class Match(models.Model):
     MATCH_STATUS = [
         ('pending', 'Pending'),
         ('matched', 'Matched'),    
+        ('rejected', 'Rejected'),
         ('passed', 'Passed'),
         ('expired', 'Expired'),     
     ]
@@ -40,17 +41,6 @@ class Match(models.Model):
         unique=True,
         db_index=True
     )
-    status = models.CharField(
-    max_length=20,
-    choices=[
-        ('pending', 'Pending'),
-        ('matched', 'Matched'),
-        ('rejected', 'Rejected'),
-    ],
-    default='pending',
-    help_text='Status of the match'
-    )
-    
     # User who initiated the like
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -184,7 +174,7 @@ class UserPreference(models.Model):
     show_only_verified = models.BooleanField(
         default=False,
         help_text=_('Show only verified users'))
-    hide_seen_profiles = models.PositiveIntegerField(default=True, help_text=_('Hide profile already viewed'))
+    hide_seen_profiles = models.BooleanField(default=True, help_text=_('Hide profiles already viewed'))
 
     age_importance = models.PositiveIntegerField(
         choices=IMPORTANCE_LEVELS,
@@ -202,7 +192,7 @@ class UserPreference(models.Model):
     )
     
     relationship_goal_importance = models.PositiveIntegerField(
-        default=5,
+        default=4,
         choices=IMPORTANCE_LEVELS
     )
     
@@ -387,7 +377,8 @@ class Block(models.Model):
         Check if two users are blocked each other.
         cached for better performance
         """
-        cache_key = f'block_check_{min(user1.id, user2.id)}_{max(user1.id, user2.id)}'
+        user_ids = sorted([str(user1.id), str(user2.id)])
+        cache_key = f'block_check_{user_ids[0]}_{user_ids[1]}'
         cached_result = cache.get(cache_key)
         if cached_result is not None:
             return cached_result

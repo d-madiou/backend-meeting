@@ -1,30 +1,39 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest
 
-from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest, DeviceToken
+# ==========================================
+# Register User Model
+# ==========================================
+class CustomUserAdmin(UserAdmin):
+    model = User
+    list_display = ['username', 'email', 'is_verified', 'is_active']
+    search_fields = ['username', 'email']
+    ordering = ['username']
+    
+    # Standard UserAdmin fieldsets
+    fieldsets = UserAdmin.fieldsets
+    add_fieldsets = UserAdmin.add_fieldsets
 
-# Register your models here.
-admin.site.register(User)
-admin.site.register(Profile)
-admin.site.register(ProfilePhoto)
-admin.site.register(Interest)
-admin.site.register(ProfileInterest)
-admin.site.register(DeviceToken) 
+admin.site.register(User, CustomUserAdmin)
 
+# ==========================================
+# Register Profile Models
+# ==========================================
+@admin.register(Profile)
+class ProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'gender', 'city', 'relationship_goal', 'profile_completion_percentage']
+    list_filter = ['gender', 'relationship_goal', 'marital_status']
+    search_fields = ['user__username', 'city', 'profession']
 
-# ==============================================================
+@admin.register(ProfilePhoto)
+class ProfilePhotoAdmin(admin.ModelAdmin):
+    list_display = ['profile', 'is_primary', 'uploaded_at']
 
-from .models import Story, StoryView
+@admin.register(Interest)
+class InterestAdmin(admin.ModelAdmin):
+    list_display = ['name']
 
-@admin.register(Story)
-class StoryAdmin(admin.ModelAdmin):
-    list_display = ['user', 'story_type', 'view_count', 'created_at', 'expires_at', 'is_expired']
-    list_filter = ['story_type', 'created_at']
-    search_fields = ['user__username', 'caption']
-    readonly_fields = ['view_count', 'created_at', 'expires_at']
-
-@admin.register(StoryView)
-class StoryViewAdmin(admin.ModelAdmin):
-    list_display = ['story', 'viewer', 'viewed_at']
-    list_filter = ['viewed_at']
-    search_fields = ['story__user__username', 'viewer__username']
-    readonly_fields = ['viewed_at']
+@admin.register(ProfileInterest)
+class ProfileInterestAdmin(admin.ModelAdmin):
+    list_display = ['profile', 'interest', 'passion_level']

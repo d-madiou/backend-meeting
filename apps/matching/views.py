@@ -6,11 +6,8 @@ from django.db.models import Q
 from apps.common.pagination import StandardResultsSetPagination
 from apps.matching.services import MatchingService
 from .models import Match, SwipeAction
-from apps.users.models import User, Profile
+from apps.users.models import User
 from apps.users.serializers import UserBriefSerializer, UserSerializer
-from apps.users.utils.push_notifications import send_like_notification, send_match_notification
-
-from apps.users.utils.push_notifications import send_like_notification, send_match_notification 
 from django.utils import timezone
 
 # ============================================================================
@@ -59,7 +56,7 @@ class FeedViewSet(viewsets.ViewSet):
     @action(detail=False, methods=['post'])
     def swipe(self, request):
         """
-        Record a swipe action (like or pass) and send notifications.
+        Record a swipe action (like or pass).
         """
         target_uuid = request.data.get('target_user_uuid')
         action = request.data.get('action')
@@ -83,32 +80,9 @@ class FeedViewSet(viewsets.ViewSet):
             action=action
         )
 
-        # --- Handle notification logic for 'like' ---
         if action == 'like':
-            # Notify target user someone liked them
-            send_like_notification(
-                liker_username=request.user.username,
-                liked_user_id=str(target_user.id),
-                liker_user_id=str(request.user.id)
-            )
-
-            # If it's a mutual match
             if mutual_match:
                 mutual_match.mark_as_mutual()
-
-                # Send match notifications to both users
-                send_match_notification(
-                    matched_username=target_user.username,
-                    user_id=str(request.user.id),
-                    match_id=str(mutual_match.id),
-                    matched_user_id=str(target_user.id)
-                )
-                send_match_notification(
-                    matched_username=request.user.username,
-                    user_id=str(target_user.id),
-                    match_id=str(mutual_match.id),
-                    matched_user_id=str(request.user.id)
-                )
 
         # --- Prepare response ---
         response_data = {
@@ -310,25 +284,7 @@ class MatchViewSet(viewsets.ViewSet):
             reverse_match.matched_at = timezone.now()
             reverse_match.save()
 
-            # 4. PUSH NOTIFICATION LOGIC
-            
-            # Notify the initiator user (the one who originally liked first)
-            send_match_notification(
-                matched_username=request.user.username,
-                user_id=str(initiator_user.id),
-                match_id=str(match.id),
-                matched_user_id=str(request.user.id)  # 🎯 FIX: Pass the current user's ID
-            )
-            
-            # Notify the current user (the one who accepted)
-            send_match_notification(
-                matched_username=initiator_user.username,
-                user_id=str(request.user.id),
-                match_id=str(match.id),
-                matched_user_id=str(initiator_user.id) # 🎯 FIX: Pass the initiator's ID
-            )
-            
-            # 5. Prepare response
+            # 4. Prepare response
             photo_url = None
             if hasattr(initiator_user, 'profile') and initiator_user.profile:
                 primary_photo = initiator_user.profile.photos.filter(is_primary=True).first() or \

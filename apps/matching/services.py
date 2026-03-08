@@ -195,7 +195,7 @@ class MatchingService:
         return max(0, min(100, int(weighted_score)))
     
     @staticmethod
-    def calculate_relationship_goal_score(user_goal, target_goal, importance=5):
+    def calculate_relationship_goal_score(user_goal, target_goal, importance=4):
         """
         Calculate compatibility score based on relationship goals.
         
@@ -210,16 +210,12 @@ class MatchingService:
         if not user_goal or not target_goal:
             return 50  # Neutral if missing
         
-        # Exact match is best
         if user_goal == target_goal:
             raw_score = 100
-        # 'unsure' is compatible with anything
-        elif user_goal == 'unsure' or target_goal == 'unsure':
-            raw_score = 75
-        # Serious and casual are incompatible
-        elif (user_goal == 'serious' and target_goal == 'casual') or \
-             (user_goal == 'casual' and target_goal == 'serious'):
-            raw_score = 20
+        elif {'serious', 'marriage'} == {user_goal, target_goal}:
+            raw_score = 85
+        elif 'friendship' in {user_goal, target_goal}:
+            raw_score = 40
         else:
             raw_score = 50
         

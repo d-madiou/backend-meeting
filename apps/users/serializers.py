@@ -1,20 +1,11 @@
 """
 User & Profile Serializers
 ===========================
-Demonstrates:
-- Separation of read/write serializers for security
-- Nested serializers for complex relationships
-- Custom validation methods
-- Field-level permissions
-- Write-only vs read-only fields
 """
 
 from rest_framework import serializers
-from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import authenticate
-from django.core.exceptions import ValidationError
 from datetime import date
-from .models import Story, StoryView
 
 from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest
 
@@ -25,17 +16,14 @@ from .models import User, Profile, ProfilePhoto, Interest, ProfileInterest
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     """
-    Serializer for minimal user registration.
-    Design: Only collect essential information at registration.
-    Profile details collected in separate step after authentication.
+    Serializer for minimal user registration with Username + PIN.
     """
-    password = serializers.CharField(
-        write_only=True,
+    pin = serializers.CharField(
         required=True,
-        validators=[validate_password],
+        write_only=True,
         style={'input_type': 'password'}
     )
-    password_confirm = serializers.CharField(
+    pin_confirm = serializers.CharField(
         write_only=True,
         required=True,
         style={'input_type': 'password'}
@@ -43,28 +31,24 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['username', 'email', 'password', 'password_confirm']
-        extra_kwargs = {'email': {'required': True}}
+        fields = ['username', 'pin', 'pin_confirm']
+
+    def validate_pin(self, value):
+        if not value.isdigit() or len(value) != 4:
+            raise serializers.ValidationError('Le PIN doit contenir exactement 4 chiffres.')
+        return value
 
     def validate(self, attrs):
-        """
-        Validate that passwords match.
-        """
-        if attrs['password'] != attrs['password_confirm']:
+        if attrs['pin'] != attrs['pin_confirm']:
             raise serializers.ValidationError({
-                'password_confirm': 'Passwords do not match.'
+                'pin_confirm': 'Les PINs ne correspondent pas.'
             })
         return attrs
 
     def create(self, validated_data):
-        """
-        Create user with hashed password.
-        """
-        validated_data.pop('password_confirm')
         user = User.objects.create_user(
             username=validated_data['username'],
-            email=validated_data['email'],
-            password=validated_data['password']
+            password=validated_data['pin']
         )
         Profile.objects.create(user=user)
         return user
@@ -72,44 +56,45 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 class UserLoginSerializer(serializers.Serializer):
     """
-    Serializer for user login.
-    Returns user data and authentication token.
+    Serializer for user login using Username + PIN.
     """
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(
+    username = serializers.CharField(required=True)
+    pin = serializers.CharField(
         required=True,
         write_only=True,
         style={'input_type': 'password'}
     )
 
-    def validate(self, attrs):
-        """
-        Validate credentials and authenticate user.
-        """
-        email = attrs.get('email')
-        password = attrs.get('password')
+    def validate_pin(self, value):
+        if not value.isdigit() or len(value) != 4:
+            raise serializers.ValidationError('Le PIN doit contenir exactement 4 chiffres.')
+        return value
 
-        if email and password:
+    def validate(self, attrs):
+        username = attrs.get('username')
+        pin = attrs.get('pin')
+
+        if username and pin:
             user = authenticate(
                 request=self.context.get('request'),
-                email=email,
-                password=password
+                username=username,
+                password=pin
             )
             if not user:
                 raise serializers.ValidationError(
-                    'Unable to login with provided credentials.',
+                    'Impossible de se connecter avec les identifiants fournis.',
                     code='authorization'
                 )
             if not user.is_active:
                 raise serializers.ValidationError(
-                    'User account is disabled.',
+                    'Le compte utilisateur est désactivé.',
                     code='authorization'
                 )
             attrs['user'] = user
             return attrs
         else:
             raise serializers.ValidationError(
-                'Must include "email" and "password".',
+                'Vous devez inclure le nom d\'utilisateur et le PIN.',
                 code='authorization'
             )
 
@@ -119,9 +104,6 @@ class UserLoginSerializer(serializers.Serializer):
 # ============================================================================
 
 class ProfilePhotoSerializer(serializers.ModelSerializer):
-    """
-    Serializer for profile photos.
-    """
     url = serializers.SerializerMethodField()
 
     class Meta:
@@ -130,9 +112,6 @@ class ProfilePhotoSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'uploaded_at']
 
     def get_url(self, obj):
-        """
-        Return full URL for the image.
-        """
         request = self.context.get('request')
         if obj.image and request:
             return request.build_absolute_uri(obj.image.url)
@@ -140,9 +119,6 @@ class ProfilePhotoSerializer(serializers.ModelSerializer):
 
 
 class InterestSerializer(serializers.ModelSerializer):
-    """
-    Serializer for interests.
-    """
     class Meta:
         model = Interest
         fields = ['id', 'name']
@@ -150,9 +126,6 @@ class InterestSerializer(serializers.ModelSerializer):
 
 
 class ProfileInterestSerializer(serializers.ModelSerializer):
-    """
-    Serializer for profile interests with passion level.
-    """
     interest = InterestSerializer(read_only=True)
     interest_id = serializers.PrimaryKeyRelatedField(
         queryset=Interest.objects.all(),
@@ -167,16 +140,11 @@ class ProfileInterestSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
-    """
-    Read serializer for Profile model with calculated stats.
-    """
-    
     age = serializers.IntegerField(read_only=True)
     photos = ProfilePhotoSerializer(many=True, read_only=True)
-    interests = ProfileInterestSerializer(many=True, source='profile_interests', read_only=True)
+    interests = ProfileInterestSerializer(many=True, read_only=True)
     is_complete = serializers.BooleanField(read_only=True)
     
-    # Add calculated fields
     actual_matches = serializers.SerializerMethodField()
     actual_views = serializers.SerializerMethodField()
     actual_messages_sent = serializers.SerializerMethodField()
@@ -186,94 +154,61 @@ class ProfileSerializer(serializers.ModelSerializer):
         fields = [
             'bio', 'birth_date', 'age', 'gender',
             'city', 'country', 
-            'relationship_goal', 'looking_for_gender',
+            'relationship_goal', 'religion', 'looking_for_gender',
             'min_age_preference', 'max_age_preference', 'max_distance_km',
             'profile_completion_percentage', 'is_complete',
-            'total_matches', 'total_messages_sent', 'profile_views',
+            'total_matches', 'profile_views',
             'actual_matches', 'actual_views', 'actual_messages_sent',
             'photos', 'interests',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
             'profile_completion_percentage', 'total_matches',
-            'total_messages_sent', 'profile_views',
+            'profile_views',
             'created_at', 'updated_at'
         ]
     
     def get_actual_matches(self, obj):
-        """
-        Get real count of mutual matches for this user.
-        """
         from apps.matching.models import Match
-        return Match.objects.filter(
-            user=obj.user,
-            is_mutual=True
-        ).count()
+        return Match.objects.filter(user=obj.user, is_mutual=True).count()
     
     def get_actual_views(self, obj):
-        """
-        Get real count of profile views.
-        """
         from apps.matching.models import ProfileView
-        return ProfileView.objects.filter(
-            viewed_profile=obj.user
-        ).count()
+        return ProfileView.objects.filter(viewed_profile=obj.user).count()
     
     def get_actual_messages_sent(self, obj):
-        """
-        Get real count of messages sent by this user.
-        """
         from apps.messaging.models import Message
-        return Message.objects.filter(
-            sender=obj.user
-        ).count()
+        return Message.objects.filter(sender=obj.user).count()
 
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
-    """
-    Write serializer for updating profile.
-    Design Pattern: Separate write serializer for updates.
-    """
     class Meta:
         model = Profile
         fields = [
             'bio', 'birth_date', 'gender',
             'city', 'country',
-            'relationship_goal', 'looking_for_gender',
+            'relationship_goal', 'religion', 'looking_for_gender',
             'min_age_preference', 'max_age_preference', 'max_distance_km'
         ]
 
     def validate_birth_date(self, value):
-        """
-        Ensure user is at least 18 years old.
-        """
         if value:
             today = date.today()
-            age = today.year - value.year - (
-                (today.month, today.day) < (value.month, value.day)
-            )
+            age = today.year - value.year - ((today.month, today.day) < (value.month, value.day))
             if age < 18:
-                raise serializers.ValidationError(
-                    'You must be at least 18 years old to use this app.'
-                )
+                raise serializers.ValidationError('Vous devez avoir au moins 18 ans pour utiliser cette application.')
         return value
 
     def validate(self, attrs):
-        """
-        Validate age preferences.
-        """
         min_age = attrs.get('min_age_preference')
         max_age = attrs.get('max_age_preference')
         if min_age and max_age and min_age > max_age:
             raise serializers.ValidationError({
-                'min_age_preference': 'Minimum age cannot be greater than maximum age.'
+                'min_age_preference': "L'âge minimum ne peut pas être supérieur à l'âge maximum."
             })
         return attrs
 
     def update(self, instance, validated_data):
-        """
-        Update profile and recalculate completion percentage.
-        """
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -282,9 +217,6 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    """
-    Read serializer for User model including profile data.
-    """
     profile = ProfileSerializer(read_only=True)
     is_profile_complete = serializers.BooleanField(source='profile.is_complete', read_only=True)
     created_at = serializers.DateTimeField(source='profile.created_at', read_only=True)
@@ -301,9 +233,6 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class UserBriefSerializer(serializers.ModelSerializer):
-    """
-    Lightweight user serializer for lists.
-    """
     primary_photo = serializers.SerializerMethodField()
     age = serializers.SerializerMethodField()
     city = serializers.SerializerMethodField()
@@ -313,9 +242,6 @@ class UserBriefSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'primary_photo', 'age', 'city']
 
     def get_primary_photo(self, obj):
-        """
-        Get URL of primary photo.
-        """
         request = self.context.get('request')
         primary_photo = obj.profile.photos.filter(is_primary=True).first()
         if primary_photo and request:
@@ -323,44 +249,29 @@ class UserBriefSerializer(serializers.ModelSerializer):
         return None
 
     def get_age(self, obj):
-        """
-        Get user's age from profile.
-        """
         return getattr(obj.profile, 'age', None)
 
     def get_city(self, obj):
-        """
-        Get user's city from profile.
-        """
         return getattr(obj.profile, 'city', None)
 
 
 class ProfilePhotoUploadSerializer(serializers.ModelSerializer):
-    """
-    Serializer for uploading profile photos.
-    """
     class Meta:
         model = ProfilePhoto
         fields = ['image', 'is_primary']
 
     def validate(self, attrs):
-        """
-        Validate photo upload.
-        """
         from django.conf import settings
         profile = self.context['profile']
         current_photo_count = profile.photos.count()
         max_photos = getattr(settings, 'MAX_PROFILE_PHOTOS', 6)
         if current_photo_count >= max_photos:
             raise serializers.ValidationError(
-                f'You can only upload up to {max_photos} photos.'
+                f'Vous ne pouvez télécharger que jusqu\'à {max_photos} photos.'
             )
         return attrs
 
     def create(self, validated_data):
-        """
-        Create photo associated with user's profile.
-        """
         profile = self.context['profile']
         photo = ProfilePhoto.objects.create(profile=profile, **validated_data)
         profile.calculate_completion_percentage()
@@ -368,116 +279,18 @@ class ProfilePhotoUploadSerializer(serializers.ModelSerializer):
 
 
 # ============================================================================
-# RESPONSE SERIALIZERS (for consistent API responses)
+# RESPONSE SERIALIZERS
 # ============================================================================
 
 class AuthResponseSerializer(serializers.Serializer):
-    """
-    Serializer for authentication responses.
-    """
     user = UserSerializer(read_only=True)
     token = serializers.CharField(read_only=True)
     message = serializers.CharField(read_only=True)
 
-
 class SuccessResponseSerializer(serializers.Serializer):
-    """
-    Generic success response serializer.
-    """
     message = serializers.CharField()
     data = serializers.DictField(required=False)
 
-
 class ErrorResponseSerializer(serializers.Serializer):
-    """
-    Generic error response serializer.
-    """
     error = serializers.CharField()
     details = serializers.DictField(required=False)
-
-class StoryViewerSerializer(serializers.ModelSerializer):
-    """Serializer for story viewers."""
-    viewer_username = serializers.CharField(source='viewer.username', read_only=True)
-    viewer_photo = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = StoryView
-        fields = ['viewer_username', 'viewer_photo', 'viewed_at']
-    
-    def get_viewer_photo(self, obj):
-        request = self.context.get('request')
-        primary_photo = obj.viewer.profile.photos.filter(is_primary=True).first()
-        if primary_photo and request:
-            return request.build_absolute_uri(primary_photo.image.url)
-        return None
-
-
-class StorySerializer(serializers.ModelSerializer):
-    """Serializer for Story model."""
-    user_username = serializers.CharField(source='user.username', read_only=True)
-    user_photo = serializers.SerializerMethodField()
-    media_url = serializers.SerializerMethodField()
-    is_expired = serializers.BooleanField(read_only=True)
-    time_remaining = serializers.IntegerField(read_only=True)
-    is_viewed = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Story
-        fields = [
-            'id', 'user_username', 'user_photo', 'story_type',
-            'media_url', 'text_content', 'background_color',
-            'caption', 'duration', 'view_count',
-            'is_expired', 'time_remaining', 'is_viewed',
-            'created_at', 'expires_at'
-        ]
-        read_only_fields = ['id', 'view_count', 'created_at', 'expires_at']
-    
-    def get_user_photo(self, obj):
-        request = self.context.get('request')
-        primary_photo = obj.user.profile.photos.filter(is_primary=True).first()
-        if primary_photo and request:
-            return request.build_absolute_uri(primary_photo.image.url)
-        return None
-    
-    def get_media_url(self, obj):
-        request = self.context.get('request')
-        if obj.story_type == 'image' and obj.image:
-            return request.build_absolute_uri(obj.image.url)
-        elif obj.story_type == 'video' and obj.video:
-            return request.build_absolute_uri(obj.video.url)
-        return None
-    
-    def get_is_viewed(self, obj):
-        """Check if current user has viewed this story."""
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return StoryView.objects.filter(
-                story=obj,
-                viewer=request.user
-            ).exists()
-        return False
-
-
-class StoryCreateSerializer(serializers.ModelSerializer):
-    """Serializer for creating stories."""
-    
-    class Meta:
-        model = Story
-        fields = [
-            'story_type', 'image', 'video',
-            'text_content', 'background_color', 'caption', 'duration'
-        ]
-    
-    def validate(self, attrs):
-        story_type = attrs.get('story_type')
-        
-        if story_type == 'image' and not attrs.get('image'):
-            raise serializers.ValidationError("Image is required for image stories")
-        
-        if story_type == 'video' and not attrs.get('video'):
-            raise serializers.ValidationError("Video is required for video stories")
-        
-        if story_type == 'text' and not attrs.get('text_content'):
-            raise serializers.ValidationError("Text content is required for text stories")
-        
-        return attrs

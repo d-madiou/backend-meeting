@@ -5,30 +5,33 @@ from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.cache import cache
 from datetime import date
 import uuid
-from django.utils import timezone
-from datetime import timedelta
-
 
 # ==============================
-# Custom User Manager
+# Custom User Manager (Username + PIN Focus)
 # ==============================
 class UserManager(BaseUserManager):
     """
-    Custom user manager that uses email instead of username for authentication.
+    Custom user manager that uses username instead of email.
+    The 'password' passed here will be the user's 4-digit PIN.
     """
-    def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError(_('Users must have an email address'))
-        email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
+    def create_user(self, username, password=None, **extra_fields):
+        if not username:
+            raise ValueError(_('Users must have a username'))
+
+        # Normalize email only if it is provided
+        if 'email' in extra_fields and extra_fields['email']:
+            extra_fields['email'] = self.normalize_email(extra_fields['email'])
+
+        user = self.model(username=username, **extra_fields)
+        # Django securely hashes the 4-digit PIN here
         user.set_password(password)
         user.save(using=self._db)
         return user
-    
-    def create_superuser(self, email, password=None, **extra_fields):
+
+    def create_superuser(self, username, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
-        return self.create_user(email, password, **extra_fields)
+        return self.create_user(username, password, **extra_fields)
 
 
 # ==============================
@@ -36,61 +39,93 @@ class UserManager(BaseUserManager):
 # ==============================
 class User(AbstractUser):
     """
-    Extended User model with UUID and email-based authentication.
+    Extended User model tailored for Username + PIN authentication.
+    Email is strictly optional.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True, max_length=255)
-    username = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=150, unique=True, db_index=True)
+
+    # Email is now optional, used only for recovery or progressive profiling later
+    email = models.EmailField(max_length=255, unique=True, null=True, blank=True)
+
     last_activity = models.DateTimeField(null=True, blank=True)
+
+    # We can use this for Smile ID face verification status
     is_verified = models.BooleanField(
         default=False,
-        help_text=_('Designates whether the user has verified their email address.')
+        help_text=_('Designates whether the user has passed face verification.')
     )
 
     objects = UserManager()
 
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['username']
+    # The magic switch: Make username the primary login identifier
+    USERNAME_FIELD = 'username'
+    # Remove email from required fields
+    REQUIRED_FIELDS = []
 
     def __str__(self):
-        return self.username or self.email
-
-    def get_full_name(self):
-        """Return the user's full name with title case."""
-        return super().get_full_name().title() if self.get_full_name() else self.username
+        return self.username
 
 
 # ==============================
-# Profile Model
+# Profile Model (Marriage/Friendship Optimized)
 # ==============================
 class Profile(models.Model):
     """
-    Extended profile information for dating app users.
-    Linked one-to-one with the User model.
+    Extended profile information optimized for marriage and friendship.
     """
 
     GENDER_CHOICES = [
         ('M', 'Male'),
         ('F', 'Female'),
-        ('O', 'Other'),
     ]
 
     RELATIONSHIP_GOALS = [
-        ('casual', 'Casual Dating'),
-        ('serious', 'Serious Relationship'),
         ('friendship', 'Friendship'),
+        ('serious', 'Serious Relationship'),
         ('marriage', 'Marriage'),
+    ]
+
+    MARITAL_STATUS_CHOICES = [
+        ('single', 'Single (Never Married)'),
+        ('divorced', 'Divorced'),
+        ('widowed', 'Widowed'),
+        ('separated', 'Separated'),
+    ]
+
+    RELIGION_CHOICES = [
+        ('muslim', 'Muslim'),
+        ('christian', 'Christian'),
+        ('hindu', 'Hindu'),
+        ('buddhist', 'Buddhist'),
+        ('traditional', 'Traditional'),
+        ('other', 'Other'),
     ]
 
     user = models.OneToOneField(
         User, on_delete=models.CASCADE, related_name='profile', primary_key=True
     )
+
+    # Basic Info
     bio = models.TextField(blank=True, help_text=_('Short biography or description'))
     birth_date = models.DateField(null=True, blank=True, help_text=_('Date of birth'))
     gender = models.CharField(max_length=2, choices=GENDER_CHOICES, blank=True)
     city = models.CharField(max_length=100, blank=True)
     country = models.CharField(max_length=100, blank=True)
+
+    # Marriage/Context Specifics
     relationship_goal = models.CharField(max_length=20, choices=RELATIONSHIP_GOALS, blank=True)
+    marital_status = models.CharField(max_length=20, choices=MARITAL_STATUS_CHOICES, blank=True)
+    religion = models.CharField(
+        max_length=100,
+        choices=RELIGION_CHOICES,
+        blank=False,
+        help_text=_('Select one religion option')
+    )
+    profession = models.CharField(max_length=150, blank=True, help_text=_('Job or profession'))
+    education_level = models.CharField(max_length=100, blank=True)
+    height_cm = models.PositiveIntegerField(null=True, blank=True, help_text=_('Height in centimeters'))
+
     looking_for_gender = models.CharField(
         max_length=2, choices=GENDER_CHOICES, blank=True, help_text=_('Gender you are looking for')
     )
@@ -100,10 +135,10 @@ class Profile(models.Model):
         default=18, blank=True, validators=[MinValueValidator(18), MaxValueValidator(100)]
     )
     max_age_preference = models.PositiveIntegerField(
-        default=100, blank=True, validators=[MinValueValidator(18), MaxValueValidator(100)]
+        default=60, blank=True, validators=[MinValueValidator(18), MaxValueValidator(100)]
     )
     max_distance_km = models.PositiveIntegerField(
-        default=50, blank=True, help_text=_('Maximum distance in kilometers for matches')
+        default=100, blank=True, help_text=_('Maximum distance in kilometers for matches')
     )
 
     # Statistics
@@ -111,7 +146,6 @@ class Profile(models.Model):
         default=0, validators=[MinValueValidator(0), MaxValueValidator(100)]
     )
     total_matches = models.PositiveIntegerField(default=0)
-    total_messages_sent = models.PositiveIntegerField(default=0)
     profile_views = models.PositiveIntegerField(default=0)
 
     # Timestamp fields
@@ -123,7 +157,8 @@ class Profile(models.Model):
         indexes = [
             models.Index(fields=['gender', 'birth_date']),
             models.Index(fields=['city', 'country']),
-            models.Index(fields=['profile_completion_percentage']),
+            models.Index(fields=['relationship_goal']),
+            models.Index(fields=['religion']),
         ]
 
     def __str__(self):
@@ -147,14 +182,15 @@ class Profile(models.Model):
         age = today.year - self.birth_date.year - (
             (today.month, today.day) < (self.birth_date.month, self.birth_date.day)
         )
-        cache.set(cache_key, age, 86400) 
+        cache.set(cache_key, age, 86400)
         return age
 
     @property
     def is_complete(self):
         """Check if profile has a minimum set of fields filled out."""
         required_fields = [
-            self.bio, self.birth_date, self.gender, self.city, self.relationship_goal
+            self.bio, self.birth_date, self.gender, self.city,
+            self.relationship_goal, self.marital_status
         ]
         has_photos = hasattr(self, "photos") and self.photos.exists()
         return all(required_fields) and has_photos
@@ -164,18 +200,20 @@ class Profile(models.Model):
     # ---------------------
     def calculate_completion_percentage(self):
         """
-        Calculate how complete the profile is based on filled fields and media.
+        Calculate how complete the profile is based on filled fields.
         """
-        total_fields = 7
+        # Increased total fields to account for new marriage-focused attributes
+        total_fields = 10
         filled_fields = 0
 
         if self.bio: filled_fields += 1
         if self.birth_date: filled_fields += 1
         if self.gender: filled_fields += 1
         if self.city: filled_fields += 1
-        if self.country: filled_fields += 1
         if self.relationship_goal: filled_fields += 1
-        if self.looking_for_gender: filled_fields += 1
+        if self.marital_status: filled_fields += 1
+        if self.profession: filled_fields += 1
+        if self.religion: filled_fields += 1
         if hasattr(self, "photos") and self.photos.exists(): filled_fields += 1
         if hasattr(self, "interests") and self.interests.exists(): filled_fields += 1
 
@@ -195,9 +233,6 @@ class Profile(models.Model):
 # Profile Photo
 # ==============================
 class ProfilePhoto(models.Model):
-    """
-    Stores multiple photos for a profile.
-    """
     profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='photos')
     image = models.ImageField(upload_to='profile_photos/')
     is_primary = models.BooleanField(default=False)
@@ -207,7 +242,6 @@ class ProfilePhoto(models.Model):
         return f"Photo for {self.profile.user.username}"
 
     def save(self, *args, **kwargs):
-        """Ensure the first uploaded photo is set as primary."""
         if not ProfilePhoto.objects.filter(profile=self.profile).exists():
             self.is_primary = True
         super().save(*args, **kwargs)
@@ -217,9 +251,19 @@ class ProfilePhoto(models.Model):
 # Interests
 # ==============================
 class Interest(models.Model):
-    """
-    Represents an available interest/hobby (e.g. Music, Sports, Art).
-    """
+    DEFAULT_INTEREST_NAMES = [
+        'Cooking',
+        'Travel',
+        'Reading',
+        'Sports',
+        'Music',
+        'Technology',
+        'Movies',
+        'Entrepreneurship',
+        'Fitness',
+        'Volunteering',
+    ]
+
     name = models.CharField(max_length=100, unique=True)
 
     class Meta:
@@ -234,15 +278,11 @@ class Interest(models.Model):
 # Profile Interests (Many-to-Many)
 # ==============================
 class ProfileInterest(models.Model):
-    """
-    Intermediate table connecting profiles to their interests.
-    """
     profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='interests')
     interest = models.ForeignKey(Interest, on_delete=models.CASCADE, related_name='profiles')
     passion_level = models.PositiveIntegerField(
         default=1,
         validators=[MinValueValidator(1), MaxValueValidator(5)],
-        help_text=_('How passionate the user is about this interest (1–5)')
     )
 
     class Meta:
@@ -250,187 +290,4 @@ class ProfileInterest(models.Model):
         db_table = 'profile_interests'
 
     def __str__(self):
-        return f"{self.profile.user.username} → {self.interest.name} ({self.passion_level})"
-
-#========== firbase real time notifications
-class DeviceToken(models.Model):
-    """
-    Store device tokens for push notifications.
-    """
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='device_tokens'
-    )
-    token = models.CharField(
-        max_length=255,
-        unique=True,
-        help_text='Expo push token'
-    )
-    platform = models.CharField(
-        max_length=10,
-        choices=[('ios', 'iOS'), ('android', 'Android')],
-        help_text='Device platform'
-    )
-    device_type = models.CharField(
-        max_length=100,
-        blank=True,
-        help_text='Device model/name'
-    )
-    is_active = models.BooleanField(
-        default=True,
-        help_text='Is this token still valid'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    
-    class Meta:
-        db_table = 'device_tokens'
-        indexes = [
-            models.Index(fields=['user', 'is_active']),
-        ]
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.platform}"
-    
-# =================================================================
-class Story(models.Model):
-    """
-    User stories similar to WhatsApp/Instagram stories.
-    Stories expire after 24 hours.
-    """
-    
-    STORY_TYPES = [
-        ('image', 'Image'),
-        ('video', 'Video'),
-        ('text', 'Text'),
-    ]
-    
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='stories'
-    )
-    
-    story_type = models.CharField(
-        max_length=10,
-        choices=STORY_TYPES,
-        default='image'
-    )
-    
-    # Media fields
-    image = models.ImageField(
-        upload_to='stories/%Y/%m/%d/',
-        null=True,
-        blank=True,
-        help_text=_('Story image')
-    )
-    
-    video = models.FileField(
-        upload_to='stories/%Y/%m/%d/',
-        null=True,
-        blank=True,
-        help_text=_('Story video')
-    )
-    
-    # Text story fields
-    text_content = models.TextField(
-        max_length=500,
-        blank=True,
-        help_text=_('Text content for text-only stories')
-    )
-    
-    background_color = models.CharField(
-        max_length=7,
-        default='#FF006E',
-        help_text=_('Background color for text stories (hex)')
-    )
-    
-    # Caption (optional for all types)
-    caption = models.CharField(
-        max_length=200,
-        blank=True,
-        help_text=_('Optional caption for story')
-    )
-    
-    # Duration in seconds (for video/display time)
-    duration = models.PositiveIntegerField(
-        default=5,
-        help_text=_('Display duration in seconds')
-    )
-    
-    # View count
-    view_count = models.PositiveIntegerField(default=0)
-    
-    # Timestamps
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    expires_at = models.DateTimeField(db_index=True)
-    
-    class Meta:
-        db_table = 'stories'
-        ordering = ['-created_at']
-        verbose_name_plural = 'Stories'
-        indexes = [
-            models.Index(fields=['user', '-created_at']),
-            models.Index(fields=['expires_at']),
-        ]
-    
-    def __str__(self):
-        return f"{self.user.username}'s story - {self.story_type}"
-    
-    def save(self, *args, **kwargs):
-        """Set expiration time to 24 hours from creation."""
-        if not self.expires_at:
-            self.expires_at = timezone.now() + timedelta(hours=24)
-        super().save(*args, **kwargs)
-    
-    @property
-    def is_expired(self):
-        """Check if story has expired."""
-        return timezone.now() > self.expires_at
-    
-    @property
-    def time_remaining(self):
-        """Get remaining time in seconds."""
-        if self.is_expired:
-            return 0
-        delta = self.expires_at - timezone.now()
-        return int(delta.total_seconds())
-    
-    def increment_views(self):
-        """Increment view counter atomically."""
-        from django.db.models import F
-        Story.objects.filter(pk=self.pk).update(view_count=F('view_count') + 1)
-        self.refresh_from_db()
-
-
-class StoryView(models.Model):
-    """
-    Track who has viewed each story.
-    """
-    
-    story = models.ForeignKey(
-        Story,
-        on_delete=models.CASCADE,
-        related_name='viewers'
-    )
-    
-    viewer = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='story_views'
-    )
-    
-    viewed_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        db_table = 'story_views'
-        unique_together = ['story', 'viewer']
-        ordering = ['-viewed_at']
-        indexes = [
-            models.Index(fields=['story', '-viewed_at']),
-            models.Index(fields=['viewer', '-viewed_at']),
-        ]
-    
-    def __str__(self):
-        return f"{self.viewer.username} viewed {self.story.user.username}'s story"
+        return f"{self.profile.user.username} → {self.interest.name}"
